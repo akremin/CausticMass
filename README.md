@@ -6,12 +6,15 @@ This code is based off [Gifford et al. (2013)](http://arxiv.org/abs/1307.0017) a
 
 ### Authors: ###
 
-(Contributions have come from all of the following.)
+This is a forked, updated, version of code originally written by:
 
 * **Dan Gifford**, University of Michigan
 * **Nicholas Kern**, University of Michigan
 * **Christopher Miller**, University of Michigan
 * **Craig Harrison**
+
+Updates and modifications performed by:
+* **Anthony Kremin**, University of Michigan
 
 ### License: ###
 
