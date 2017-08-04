@@ -54,13 +54,13 @@ class CausticSurface:
 
         bin = None - if doing multiple halos, can assign an ID number
     """
-    def __init__(self):
-        pass
+    def __init__(self,constants=Constants()):
+        self.constants = constants
     
     def findsurface(self,data,ri,vi,Zi,memberflags=None,r200=2.0,maxv=5000.0,halo_scale_radius=None,halo_scale_radius_e=0.01,halo_vdisp=None,bin=None,plotphase=False,beta=None,mirror=True,q=10.0,Hz = 100.0,edge_perc=0.1,edge_int_remove=False):
         kappaguess = np.max(Zi) #first guess at the level
         #self.levels = np.linspace(0.00001,kappaguess,100)[::-1] #create levels (kappas) to try out
-        self.levels = 10**(np.linspace(np.log10(np.min(Zi[Zi>0]/5.0)),np.log10(kappaguess),200)[::-1]) 
+        self.levels = np.logspace(np.log10(np.min(Zi[Zi>0]/5.0)),np.log10(kappaguess),200)[::-1] 
         fitting_radii = np.where((ri>=r200/3.0) & (ri<=r200)) #when fitting an NFW (later), this defines the r range to fit within
 
         self.r200 = r200
@@ -84,17 +84,17 @@ class CausticSurface:
                 print('O ya! membership calculation!')
             except:
                 self.gal_vdisp = np.std(vvarcal,ddof=1)
-            self.vvar = self.gal_vdisp**2
+            self.vvar = self.gal_vdisp*self.gal_vdisp
         elif halo_vdisp is not None:
             self.gal_vdisp = halo_vdisp
-            self.vvar = self.gal_vdisp**2
+            self.vvar = self.gal_vdisp*self.gal_vdisp
         else:
             #Variable self.gal_vdisp
             try:
                 self.findvdisp(data[:,0],data[:,1],r200,maxv)
             except:
                 self.gal_vdisp = np.std(data[:,1][np.where((data[:,0]<r200) & (np.abs(data[:,1])<maxv))],ddof=1)
-            self.vvar = self.gal_vdisp**2
+            self.vvar = self.gal_vdisp*self.gal_vdisp
         
         ##initilize arrays
         #self.vesc = np.zeros(self.levels.size)

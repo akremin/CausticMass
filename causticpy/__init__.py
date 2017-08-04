@@ -18,7 +18,6 @@ from __future__ import division
 
 from . import caustic
 from . import causticsurface
-from . import masscalc
 from . import constants
 
 
