@@ -13,7 +13,7 @@ Caustic:
 import matplotlib
 matplotlib.use('Agg')
 import numpy as np
-import astStats
+from astropy.stats import biweight_midvariance
 import scipy.ndimage as ndi
 import pdb
 import warnings
@@ -129,22 +129,13 @@ class Caustic:
             self.Ngal_1mpc = None
         
         if r200 == None:
-            vdisp_prelim = astStats.biweightScale(self.data_set[:,1][np.where(self.data_set[:,0]<3.0)],9.0)
+            vdisp_prelim = biweight_midvariance(self.data_set[:,1][np.where(self.data_set[:,0]<3.0)],9.0)
             if np.sum(abs_mag) == 0:
                 r200_mean_prelim = 0.002*vdisp_prelim + 0.40
                 self.r200 = r200_mean_prelim/1.7
             else:
                 self.r200 = self.Ngal_1mpc**0.51*np.exp(-1.86)
             
-            ##original r200 est
-            #rclip,vclip = self.shiftgapper(np.vstack((self.r[np.where((self.r<3.0) & (np.abs(self.v)<3500.0))],self.v[np.where((self.r<3.0) & (np.abs(self.v)<3500.0))])).T).T
-            #vdisp_prelim_1 = astStats.biweightClipped(vclip,9.0,3.0)['biweightScale']
-            #rclip,vclip = self.shiftgapper(np.vstack((self.r[np.where((self.r<1.5) & (np.abs(self.v)<3500.0))],self.v[np.where((self.r<1.5) & (np.abs(self.v)<3500.0))])).T).T
-            #vdisp_prelim_2 = astStats.biweightClipped(vclip,9.0,3.0)['biweightScale']
-            #if vdisp_prelim_2 < 0.6*vdisp_prelim_1: vdisp_prelim = vdisp_prelim_2
-            #else: vdisp_prelim = vdisp_prelim_1
-            #r200_mean_prelim = 0.002*vdisp_prelim + 0.40
-            #self.r200 = r200_mean_prelim/1.7
             
             if self.r200 > 3.0:
                 self.r200 = 3.0
@@ -175,7 +166,7 @@ class Caustic:
             #print 'Ngal<1Mpc=',self.Ngal_1mpc
             v_cut = self.data_set[:,1][np.where((self.data_set[:,0]<self.r200) & (np.abs(self.data_set[:,1])<vlimit))]
             try:
-                self.pre_vdisp2 = astStats.biweightScale(v_cut[np.where(np.isfinite(v_cut))],9.0)
+                self.pre_vdisp2 = biweight_midvariance(v_cut[np.where(np.isfinite(v_cut))],9.0)
             except:
                 self.pre_vdisp2 = np.std(v_cut,ddof=1)
             print('Vdisp from galaxies=',self.pre_vdisp2)
@@ -205,7 +196,7 @@ class Caustic:
             self.pre_vdisp_comb = self.pre_vdisp2
             
             #if self.data_set[:,1][np.where(self.data_set[:,0]<self.r200)].size >= 10:
-            #    self.pre_vdisp_comb = astStats.biweightScale(self.data_set[:,1][np.where(self.data_set[:,0]<self.r200)],9.0)
+            #    self.pre_vdisp_comb = biweight_midvariance(self.data_set[:,1][np.where(self.data_set[:,0]<self.r200)],9.0)
             #else:
             #    self.pre_vdisp_comb = np.std(self.data_set[:,1][np.where(self.data_set[:,0]<self.r200)],ddof=1)
             #    #self.pre_vdisp_comb = (self.pre_vdisp*(self.pre_vdisp2*self.v_unc)**2+self.pre_vdisp2*118.14**2)/(118.14**2+(self.pre_vdisp2*self.v_unc)**2)
@@ -270,7 +261,7 @@ class Caustic:
         
         #calculate velocity dispersion
         try:
-            self.vdisp_gal = astStats.biweightScale(self.data_set[:,1][self.memflag==1],9.0)
+            self.vdisp_gal = biweight_midvariance(self.data_set[:,1][self.memflag==1],9.0)
         except:
             try:
                 self.vdisp_gal = np.std(self.data_set[:,1][self.memflag==1],ddof=1)
@@ -431,7 +422,7 @@ class Caustic:
         self.x_scale = (xvalues/xmax)*xres
         self.y_scale = ((yvalues*(normalization*scale)+ymax)/(ymax*2.0))*self.y_range.size
         #self.ksize_x = (4.0/(3.0*xvalues.size))**(1/5.0)*np.std(self.x_scale[xvalues<r200])
-        self.ksize_x =  (4.0/(3.0*xvalues.size))**(1/5.0)*np.sqrt((astStats.biweightScale((self.x_scale[xvalues<r200]).copy(),9.0)**2 + astStats.biweightScale((self.y_scale[xvalues<r200]).copy(),9.0)**2)/2.0)
+        self.ksize_x =  (4.0/(3.0*xvalues.size))**(1/5.0)*np.sqrt((biweight_midvariance((self.x_scale[xvalues<r200]).copy(),9.0)**2 + biweight_midvariance((self.y_scale[xvalues<r200]).copy(),9.0)**2)/2.0)
         self.ksize_x *= 1.0
         self.ksize_y = self.ksize_x#(4.0/(3.0*xvalues.size))**(1/5.0)*np.std(self.y_scale[xvalues<r200])
         self.imgr,xedge,yedge = np.histogram2d(xvalues,yvalues,bins=[self.x_range_bin,self.y_range_bin/(normalization*scale)])

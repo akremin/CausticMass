@@ -14,7 +14,7 @@ import matplotlib
 matplotlib.use('Agg')
 import numpy as np
 import matplotlib.pyplot as plt
-import astStats
+from astropy.stats import biweight_midvariance
 from scipy.optimize import curve_fit
 from scipy.interpolate import interp1d
 from skimage import measure
@@ -80,7 +80,7 @@ class CausticSurface:
         if memberflags is not None:
             vvarcal = data[:,1][np.where(memberflags==1)]
             try:
-                self.gal_vdisp = astStats.biweightScale(vvarcal[np.where(np.isfinite(vvarcal))],9.0)
+                self.gal_vdisp = biweight_midvariance(vvarcal[np.where(np.isfinite(vvarcal))],9.0)
                 print('O ya! membership calculation!')
             except:
                 self.gal_vdisp = np.std(vvarcal,ddof=1)
@@ -236,9 +236,9 @@ class CausticSurface:
                 roots = np.sort(np.abs(vi[dens>0.05]))
                 databinned = data_e[np.where((data_e[:,0]>=inner_r)&(data_e[:,0]<outer_r))]
                 if len(roots) == 0:
-                    root = 2 * astStats.biweightScale(databinned[:,1].copy(),9.0)
+                    root = 2 * biweight_midvariance(databinned[:,1].copy(),9.0)
                 elif np.abs(roots[-1]) < 500.0:
-                    root = 2 * astStats.biweightScale(databinned[:,1].copy(),9.0)
+                    root = 2 * biweight_midvariance(databinned[:,1].copy(),9.0)
                 elif np.abs(roots[-1]) > 3500.0:
                     root = 3500.0
                 else:
@@ -260,10 +260,10 @@ class CausticSurface:
                     if roots[1] < 1000.0:
                         if len(roots) > 2:
                             if roots[2] < 1000.0:
-                                root = 3 * astStats.biweightScale(databinned[:,1].copy(),9.0)
+                                root = 3 * biweight_midvariance(databinned[:,1].copy(),9.0)
                             else:
                                 root = roots[2]
-                        else: root = 3 * astStats.biweightScale(databinned[:,1].copy(),9.0)
+                        else: root = 3 * biweight_midvariance(databinned[:,1].copy(),9.0)
                     else: root = roots[1]
                 else: root = 3500.0
                 r_inside.extend(databinned[:,0][np.where(np.abs(databinned[:,1])<root)])
@@ -337,7 +337,7 @@ class CausticSurface:
         if memberflags is not None:
             vvarcal = data[:,1][np.where(memberflags==1)]
             try:
-                self.gal_vdisp = astStats.biweightScale(vvarcal[np.where(np.isfinite(vvarcal))],9.0)
+                self.gal_vdisp = biweight_midvariance(vvarcal[np.where(np.isfinite(vvarcal))],9.0)
                 print('O ya! membership calculation!')
             except:
                 self.gal_vdisp = np.std(vvarcal,ddof=1)
@@ -436,11 +436,11 @@ class CausticSurface:
    
     def findvdisp(self,r,v,r200,maxv):
         """
-        Use astLib.astStats biweight sigma clipping Scale estimator for the velocity dispersion
+        Use astropy.stats biweight sigma clipping variance for the velocity dispersion
         """
         v_cut = v[np.where((r<r200) & (np.abs(v)<maxv))]
         try:
-            self.gal_vdisp = astStats.biweightScale(v_cut[np.where(np.isfinite(v_cut))],9.0)
+            self.gal_vdisp = biweight_midvariance(v_cut[np.where(np.isfinite(v_cut))],9.0)
         except:
             self.gal_vdisp = np.std(v_cut,ddof=1)
 
