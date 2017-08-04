@@ -20,10 +20,12 @@ from scipy.interpolate import interp1d
 from skimage import measure
 import pdb
 import warnings
+#import astropy.constants as astconsts
+import astropy.units as astunits
+import astropy.cosmology as cosmology
+
 
 warnings.filterwarnings('ignore')
-
-from constants import Constants
 
 
 class CausticSurface:
@@ -54,10 +56,12 @@ class CausticSurface:
 
         bin = None - if doing multiple halos, can assign an ID number
     """
-    def __init__(self,constants=Constants()):
-        self.constants = constants
+    def __init__(self,cosmo=cosmology.FlatLambdaCDM(H0=100., Om0=0.3)):
+        self.cosmo = cosmo
     
-    def findsurface(self,data,ri,vi,Zi,memberflags=None,r200=2.0,maxv=5000.0,halo_scale_radius=None,halo_scale_radius_e=0.01,halo_vdisp=None,bin=None,plotphase=False,beta=None,mirror=True,q=10.0,Hz = 100.0,edge_perc=0.1,edge_int_remove=False):
+    def findsurface(self,data,ri,vi,Zi,memberflags=None,r200=2.0,maxv=5000.0,halo_scale_radius=None,\
+                    halo_scale_radius_e=0.01,halo_vdisp=None,bin=None,plotphase=False,beta=None,\
+                    mirror=True,q=10.0,Hz = 100.0,edge_perc=0.1,edge_int_remove=False):
         kappaguess = np.max(Zi) #first guess at the level
         #self.levels = np.linspace(0.00001,kappaguess,100)[::-1] #create levels (kappas) to try out
         self.levels = np.logspace(np.log10(np.min(Zi[Zi>0]/5.0)),np.log10(kappaguess),200)[::-1] 
@@ -204,7 +208,7 @@ class CausticSurface:
             #show()
 
         ##Output galaxy membership
-        kpc2km = self.constants.kpc2km
+        kpc2km = astunits.kpc.to(astunits.km)
         try:
             fitfunc = lambda x,a,b: np.sqrt(2*4*np.pi*6.67e-20*a*(b*kpc2km)**2*np.log(1+x/b)/(x/b))
             self.popt,self.pcov = curve_fit(fitfunc,ri,self.Ar_finalD,p0=[5e14,1])

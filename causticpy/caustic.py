@@ -18,11 +18,14 @@ import scipy.ndimage as ndi
 from scipy.interpolate import interp1d
 import pdb
 import warnings
+import astropy.constants as astconsts
+import astropy.units as astunits
+import astropy.cosmology as cosmology
+
+from causticsurface import CausticSurface
 
 warnings.filterwarnings('ignore')
 
-from causticsurface import CausticSurface
-from constants import Constants
 
 
 
@@ -42,18 +45,30 @@ class Caustic:
     data -- 2d array with columns starting with RA,DEC,Z
     """
 
-    def __init__(self,h=1.,Om0=0.3):
-        self.constants = Constants(h,Om0)
+    def __init__(self,h=1.,Om0=0.3,rlimit=4.0,vlimit=3500,kernal_stretch=10.0,
+                 rgridmax=6.0,vgridmax=5000.0,cut_sample=True,edge_int_remove=False,\
+                 gapper=True,mirror=True,absflag=False,inflection=False,edge_perc=0.1,fbr=0.65):
+        self.cosmo = cosmology.FlatLambdaCDM(H0=100.*h, Om0=Om0)
+        self.rlimit = rlimit
+        self.vlimit = vlimit
+        self.kernal_stretch = kernal_stretch
+        self.rgridmax = rgridmax
+        self.vgridmax = vgridmax
+        self.cut_sample = cut_sample
+        self.edge_int_remove = edge_int_remove
+        self.gapper = gapper
+        self.mirror = mirror
+        self.absflag = absflag
+        self.inflection = inflection
+        self.edge_perc = edge_perc
+        self.fbr= fbr
     
     def run_caustic(self,data,gal_mags=None,gal_memberflag=None,clus_ra=None,clus_dec=None,clus_z=None,\
-                    gal_r=None,gal_v=None,r200=None,clus_vdisp=None,rlimit=4.0,vlimit=3500,q=10.0,\
-                    H0=100.0,xmax=6.0,ymax=5000.0,cut_sample=True,edge_int_remove=False,\
-                    gapper=True,mirror=True,absflag=False,inflection=False,edge_perc=0.1,fbr=0.65):
-        self.S = CausticSurface(self.constants)
+                    gal_r=None,gal_v=None,r200=None,clus_vdisp=None):
+        self.S = CausticSurface(self.cosmo)
         self.clus_ra = clus_ra
         self.clus_dec = clus_dec
         self.clus_z = clus_z
-        self.fbr=fbr
 
         if self.clus_ra == None:
             #calculate average ra from galaxies
@@ -75,8 +90,8 @@ class Caustic:
         if gal_r == None:
             #calculate angular diameter distance. 
             #Variable self.ang_d
-            self.ang_d = self.constants.fidcosmo.angular_diameter_distance(clus_z)
-            self.lum_d = self.constants.fidcosmo.luminosity_distance(clus_z)
+            self.ang_d = self.cosmo.fidcosmo.angular_diameter_distance(clus_z)
+            self.lum_d = self.cosmo.fidcosmo.luminosity_distance(clus_z)
             #calculate the spherical angles of galaxies from cluster center.
             #Variable self.angle
             self.angle = self.findangle(data_spec[:,0],data_spec[:,1],self.clus_ra,self.clus_dec)
@@ -85,12 +100,12 @@ class Caustic:
             self.r = gal_r
 
         if gal_v == None:
-            self.v = self.constants.c*(data_spec[:,2] - self.clus_z)/(1+self.clus_z)
+            self.v = (astconsts.c.value/1000.)*(data_spec[:,2] - self.clus_z)/(1+self.clus_z)
         else:
             self.v = gal_v
 
         #calculate H(z)
-        self.Hz = self.constants.fidcosmo.H(self.clus_z).value  #self.constants.h*100*np.sqrt(0.25*(1+self.clus_z)**3 + 0.75)
+        self.Hz = self.cosmo.fidcosmo.H(self.clus_z).value  #self.cosmo.h*100*np.sqrt(0.25*(1+self.clus_z)**3 + 0.75)
         self.hz = self.Hz/100   #self.Hz / 100.0  #little h(z)
 
         #package galaxy data, USE ASTROPY TABLE HERE!!!!!
@@ -100,8 +115,8 @@ class Caustic:
             self.data_table = np.vstack((self.r,self.v,data_spec.T,gal_memberflag)).T
         
         #reduce sample within limits
-        if cut_sample == True:
-            self.data_set = self.set_sample(self.data_table,rlimit=rlimit,vlimit=vlimit)
+        if self.cut_sample == True:
+            self.data_set = self.set_sample(self.data_table,rlimit=self.rlimit,vlimit=self.vlimit)
         else:
             self.data_set = self.data_table
 
@@ -110,7 +125,7 @@ class Caustic:
             return 0
         
         #further select sample via shifting gapper
-        if gapper == True:
+        if self.gapper == True:
             self.data_set = self.shiftgapper(self.data_set)
         print('DATA SET SIZE',self.data_set[:,0].size)
         
@@ -123,10 +138,10 @@ class Caustic:
         
         #measure Ngal above mag limit
         try:
-            if absflag:
+            if self.absflag:
                 abs_mag = self.data_table[:,5]
             else:
-                abs_mag = self.data_table[:,7] - self.constants.fidcosmo.distmod(self.clus_z)
+                abs_mag = self.data_table[:,7] - self.cosmo.fidcosmo.distmod(self.clus_z)
             self.Ngal_1mpc = self.r[np.where((abs_mag < -19.55) & (self.r < 0.5) & (np.abs(self.v) < 3500))].size
         except IndexError:
             abs_mag = np.zeros(self.data_table[:,0].size)
@@ -143,10 +158,10 @@ class Caustic:
             
             if self.r200 > 3.0:
                 self.r200 = 3.0
-            if 3.0*self.r200 < 6.0:
-                rlimit = 3.0*self.r200
-            else:
-                rlimit = 5.5
+            #if 3.0*self.r200 < 6.0:
+            #    rlimit = 3.0*self.r200
+            #else:
+            #    rlimit = 5.5
 
         else:
             self.r200 = r200
@@ -154,15 +169,17 @@ class Caustic:
                 self.r200 = 3.0
         print('Pre_r200=',self.r200)
 
-        if mirror == True:
+        if self.mirror == True:
             print('Calculating Density w/Mirrored Data')
             self.gaussian_kernel(np.append(self.data_set[:,0],self.data_set[:,0]),\
                                  np.append(self.data_set[:,1],-self.data_set[:,1]),self.r200,\
-                                 normalization=self.Hz,scale=q,xmax=xmax,ymax=ymax)
+                                 normalization=self.Hz,scale=self.kernal_stretch,\
+                                 xmax=self.rgridmax,ymax=self.vgridmax)
         else:
             print('Calculating Density')
             self.gaussian_kernel(self.data_set[:,0],self.data_set[:,1],self.r200,\
-                                 normalization=self.Hz, scale=q,xmax=xmax,ymax=ymax)
+                                 normalization=self.Hz, scale=self.kernal_stretch,\
+                                 xmax=self.rgridmax,ymax=self.vgridmax)
         self.img_tot = self.img/np.max(np.abs(self.img))
         self.img_grad_tot = self.img_grad/np.max(np.abs(self.img_grad))
         self.img_inf_tot = self.img_inf/np.max(np.abs(self.img_inf))
@@ -171,7 +188,7 @@ class Caustic:
             #self.pre_vdisp = 9.15*self.Ngal_1mpc+350.32
             #print 'Pre_vdisp=',self.pre_vdisp
             #print 'Ngal<1Mpc=',self.Ngal_1mpc
-            v_cut = self.data_set[:,1][np.where((self.data_set[:,0]<self.r200) & (np.abs(self.data_set[:,1])<vlimit))]
+            v_cut = self.data_set[:,1][np.where((self.data_set[:,0]<self.r200) & (np.abs(self.data_set[:,1])<self.vlimit))]
             try:
                 self.pre_vdisp2 = biweight_midvariance(v_cut[np.where(np.isfinite(v_cut))],9.0)
             except:
@@ -216,24 +233,25 @@ class Caustic:
         self.beta = 0.5*self.x_range/(self.x_range + self.r200/4.0)
         #Identify initial caustic surface and members within the surface
         print('Calculating initial surface')
-        if inflection == False:
+        if self.inflection == False:
             if gal_memberflag is None:
                 self.S.findsurface(self.data_set,self.x_range,self.y_range,self.img_tot,\
                                    r200=self.r200,halo_vdisp=self.pre_vdisp_comb,beta=None,\
-                                   mirror=mirror,edge_perc=edge_perc,Hz=self.Hz,\
-                                   edge_int_remove=edge_int_remove,q=q,plotphase=False)
+                                   mirror=self.mirror,edge_perc=self.edge_perc,Hz=self.Hz,\
+                                   edge_int_remove=self.edge_int_remove,q=self.kernal_stretch,plotphase=False)
             else:
                 self.S.findsurface(self.data_set,self.x_range,self.y_range,self.img_tot,\
                                    memberflags=self.data_set[:,-1],r200=self.r200,\
-                                   mirror=mirror,edge_perc=edge_perc,Hz=self.Hz,q=q)
+                                   mirror=self.mirror,edge_perc=self.edge_perc,Hz=self.Hz,q=self.kernal_stretch)
         else:
             if gal_memberflag is None:
                 self.S.findsurface_inf(self.data_set,self.x_range,self.y_range,self.img_tot,\
                                        self.img_inf,r200=self.r200,halo_vdisp=self.pre_vdisp_comb,\
-                                       beta=None,Hz=self.Hz,q=q)
+                                       beta=None,Hz=self.Hz,q=self.kernal_stretch)
             else:
                 self.S.findsurface_inf(self.data_set,self.x_range,self.y_range,self.img_tot,\
-                                       self.img_inf,memberflags=self.data_set[:,-1],r200=self.r200,Hz=self.Hz,q=q)
+                                       self.img_inf,memberflags=self.data_set[:,-1],r200=self.r200,\
+                                       Hz=self.Hz,q=self.kernal_stretch)
 
         self.caustic_profile = self.S.Ar_finalD
         self.caustic_fit = self.S.vesc_fit
@@ -245,10 +263,10 @@ class Caustic:
         #Estimate the mass based off the caustic profile, beta profile (if given), and concentration (if given)
         if clus_z is not None:
             self.Mass = self.calculate_mass(A=self.caustic_profile,fbr=None)
-            self.Mass2 = self.calculate_mass(A=self.caustic_profile,fbr=fbr)
-            self.MassE = self.calculate_mass(A=self.caustic_edge,fbr=fbr)
-            self.MassF = self.calculate_mass(A=self.caustic_fit,fbr=fbr)
-            self.MassFE = self.calculate_mass(A=self.caustic_fit_edge,fbr=fbr)
+            self.Mass2 = self.calculate_mass(A=self.caustic_profile,fbr=self.fbr)
+            self.MassE = self.calculate_mass(A=self.caustic_edge,fbr=self.fbr)
+            self.MassF = self.calculate_mass(A=self.caustic_fit,fbr=self.fbr)
+            self.MassFE = self.calculate_mass(A=self.caustic_fit_edge,fbr=self.fbr)
 
             self.mprof = self.Mass['massprofile']
             self.mprof_fbeta = self.Mass2['massprofile']
@@ -332,25 +350,25 @@ class Caustic:
         yvalues = yvalues/(normalization*scale)
 
         self.x_range = np.arange(0,xmax,0.05)
-        self.x_range_bin = np.arange(0,xmax+0.05,0.05)
+        x_range_bin = np.arange(0,xmax+0.05,0.05)
         xres = self.x_range.size
         self.y_range = np.arange(-ymax/(normalization*scale),ymax/(normalization*scale),0.05)*normalization*scale
-        self.y_range_bin = np.arange(-ymax/(normalization*scale),ymax/(normalization*scale)+0.05,0.05)*normalization*scale
+        y_range_bin = np.arange(-ymax/(normalization*scale),ymax/(normalization*scale)+0.05,0.05)*normalization*scale
         #yres = self.y_range.size
-        self.x_scale = (xvalues/xmax)*xres
-        self.y_scale = ((yvalues*(normalization*scale)+ymax)/(ymax*2.0))*self.y_range.size
-        #self.ksize_x = (4.0/(3.0*xvalues.size))**(1/5.0)*np.std(self.x_scale[xvalues<r200])
-        self.ksize_x =  (4.0/(3.0*xvalues.size))**(1/5.0)*\
+        x_scale = (xvalues/xmax)*xres
+        y_scale = ((yvalues*(normalization*scale)+ymax)/(ymax*2.0))*self.y_range.size
+        #self.ksize_x = (4.0/(3.0*xvalues.size))**(1/5.0)*np.std(x_scale[xvalues<r200])
+        ksize_x =  (4.0/(3.0*xvalues.size))**(1/5.0)*\
                           np.sqrt((                                                                     \
-                                biweight_midvariance((self.x_scale[xvalues<r200]).copy(),9.0)**2 +      \
-                                biweight_midvariance((self.y_scale[xvalues<r200]).copy(),9.0)**2)/2.0   \
+                                biweight_midvariance((x_scale[xvalues<r200]).copy(),9.0)**2 +      \
+                                biweight_midvariance((y_scale[xvalues<r200]).copy(),9.0)**2)/2.0   \
                           )
-        self.ksize_x *= 1.0
-        self.ksize_y = self.ksize_x#(4.0/(3.0*xvalues.size))**(1/5.0)*np.std(self.y_scale[xvalues<r200])
-        self.imgr,xedge,yedge = np.histogram2d(xvalues,yvalues,bins=[self.x_range_bin,self.y_range_bin/(normalization*scale)])
-        self.img = ndi.gaussian_filter(self.imgr, (self.ksize_x,self.ksize_y),mode='reflect')
-        self.img_grad = ndi.gaussian_gradient_magnitude(self.imgr, (self.ksize_x,self.ksize_y))
-        self.img_inf = ndi.gaussian_gradient_magnitude(ndi.gaussian_gradient_magnitude(self.imgr, (self.ksize_x,self.ksize_y)), (self.ksize_x,self.ksize_y))
+        ksize_x *= 1.0
+        ksize_y = ksize_x#(4.0/(3.0*xvalues.size))**(1/5.0)*np.std(y_scale[xvalues<r200])
+        imgr,xedge,yedge = np.histogram2d(xvalues,yvalues,bins=[x_range_bin,y_range_bin/(normalization*scale)])
+        self.img = ndi.gaussian_filter(imgr, (ksize_x,ksize_y),mode='reflect')
+        self.img_grad = ndi.gaussian_gradient_magnitude(imgr, (ksize_x,ksize_y))
+        self.img_inf = ndi.gaussian_gradient_magnitude(ndi.gaussian_gradient_magnitude(imgr, (ksize_x,ksize_y)), (ksize_x,ksize_y))
 
     def calculate_mass(self,A,conc1=None,beta=0.25,fbr=None):
         """
@@ -385,13 +403,13 @@ class Caustic:
         #vdisp = self.gal_vdisp
         clus_z = self.clus_z
         r200=self.r200
-        G = self.constants.G
-        solmass = self.constants.solmass
+        G = astconsts.G.value
+        solmass = astconsts.M_sun.value
         mass_info = {}
-        crit = 2.7745946e11*(self.constants.h)**2.0*(0.25*(1+clus_z)**3.0 + 0.75)
+        crit = 2.7745946e11*(self.cosmo.h)**2.0*(0.25*(1+clus_z)**3.0 + 0.75)
         r2 = ri[ri>=0]
         A2 = A[ri>=0]
-        Mpc2km = self.constants.Mpc2km
+        Mpc2km = astunits.Mpc.to(astunits.km)
         sumtot = np.zeros(A2.size)
         #print 'Using beta = %.2f'%(beta)
         if conc1 == None:
