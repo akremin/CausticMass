@@ -13,8 +13,8 @@ CausticMass.py contains 3 classes/objects each with a list of attributes and fun
 
 
 from __future__ import absolute_import
-from __future__ import print
-from ._version import __version__
+from __future__ import print_function
+from __future__ import division
 
 from . import caustic
 from . import causticsurface
