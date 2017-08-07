@@ -5,7 +5,7 @@ Notes: Currently uses an NFW fit as the caustic surface*
 
 Caustic:
     functions: findangle(), set_sample(), shiftgapper(), _gaussian_kernel()
-    attributes: self.clus_ra, self.clus_dec, self.clus_z, self.r200, self.r, self.v, self.data, self.data_set,
+    attributes: self.clus_ra, self.clus_dec, self.clus_z, r200, self.r, self.v, self.data, self.data_set,
                 self.ang_d, self.angle, self.x_scale, self.y_scale, self.x_range, self.y_range, self.ksize_x, 
                 self.ksize_y, self.img, self.img_grad, self.img_inf
 """
@@ -35,6 +35,22 @@ class CausticFitResults:
     '''
     pass
 
+
+class MassInfo:
+    '''
+    A simple data object that holds information related to the caustic estimated
+    mass values
+    '''
+    def __init__(self, g_b=None, conc=None, f_beta=None, massprofile=None, \
+                 avg_density=None, r200_est=None, M200=None):
+        self.g_b = g_b
+        self.conc = conc
+        self.f_beta = f_beta
+        self.massprofile = massprofile
+        self.avg_density = avg_density
+        self.r200_est = r200_est
+        self.M200 = M200
+        
 
 class Caustic:
     """
@@ -76,7 +92,7 @@ class Caustic:
     #             gapper=None,mirror=None,absflag=None,inflection=None,edge_perc=None,fbr=None):
     #    
     #    self.cosmo = cosmology.FlatLambdaCDM(H0=100.*h, Om0=Om0)
-    #    self.results = CausticFitResults()
+    #    results = CausticFitResults()
     #    self.rlimit = rlimit
     #    self.vlimit = vlimit
     #    self.kernal_stretch = kernal_stretch
@@ -91,36 +107,23 @@ class Caustic:
     #    self.edge_perc = edge_perc
     #    self.fbr= fbr
     
-    def run_caustic(self,data,gal_mags=None,gal_memberflag=None,clus_ra=None,clus_dec=None,clus_z=None,\
-                    gal_r=None,gal_v=None,r200=None,clus_vdisp=None):
-        self.results = CausticFitResults()
-        self.S = CausticSurface(self.cosmo)
-        self.results.clus_ra = clus_ra
-        self.results.clus_dec = clus_dec
-        self.results.clus_z = clus_z
-
-        if gal_r == None:
-            #Reduce data set to only valid redshifts
-            data_spec = data[np.where((np.isfinite(data[:,2])) & (data[:,2] > 0.0) & (data[:,2] < 5.0))]
-        else:
-            data_spec = data[np.where(np.isfinite(gal_v))]
-
-        if gal_r == None:
+    def run_caustic(self,cluster_data):
+        S = CausticSurface(self.cosmo)
+        results = CausticFitResults()
+        
+        clus_z, r200, v, gal_memberflag = cluster_data.clus_z, cluster_data.gal_r, \
+                                            cluster_data.gal_v, cluster_data.gal_memberflag
+        if cluster_data.gal_r == None:
             #calculate angular diameter distance. 
             #Variable self.ang_d
             ang_d = self.cosmo.fidcosmo.angular_diameter_distance(clus_z)
-            #lum_d = self.cosmo.fidcosmo.luminosity_distance(clus_z)
             #calculate the spherical angles of galaxies from cluster center.
             #Variable self.angle
-            angle = self.findangle(data_spec[:,0],data_spec[:,1],clus_ra,clus_dec)
-            self.r = angle*ang_d
+            angle = self.findangle(cluster_data.data_spec[:,0],cluster_data.data_spec[:,1],\
+                                   cluster_data.clus_ra,cluster_data.clus_dec)
+            r = angle*ang_d
         else:
-            self.r = gal_r
-
-        if gal_v == None:
-            self.v = (astconsts.c.value/1000.)*(data_spec[:,2] - clus_z)/(1+clus_z)
-        else:
-            self.v = gal_v
+            r = cluster_data.gal_r
 
         #calculate H(z)
         Hz = self.cosmo.fidcosmo.H(clus_z).value  #self.cosmo.h*100*np.sqrt(0.25*(1+self.clus_z)**3 + 0.75)
@@ -128,9 +131,9 @@ class Caustic:
 
         #package galaxy data, USE ASTROPY TABLE HERE!!!!!
         if gal_memberflag is None:
-            data_table = np.vstack((self.r,self.v,data_spec.T)).T
+            data_table = np.vstack((r,v,cluster_data.data_spec.T)).T
         else:
-            data_table = np.vstack((self.r,self.v,data_spec.T,gal_memberflag)).T
+            data_table = np.vstack((r,v,cluster_data.data_spec.T,gal_memberflag)).T
         
         #reduce sample within limits
         if self.cut_sample == True:
@@ -160,53 +163,53 @@ class Caustic:
                 abs_mag = data_table[:,5]
             else:
                 abs_mag = data_table[:,7] - self.cosmo.fidcosmo.distmod(clus_z)
-            self.results.Ngal_1mpc = self.r[np.where((abs_mag < -19.55) & (self.r < 0.5) & (np.abs(self.v) < 3500))].size
+            results.Ngal_1mpc = r[np.where((abs_mag < -19.55) & (r < 0.5) & (np.abs(v) < 3500))].size
         except IndexError:
             abs_mag = np.zeros(data_table[:,0].size)
-            self.results.Ngal_1mpc = None
+            results.Ngal_1mpc = None
         
         if r200 == None:
             vdisp_prelim = biweight_midvariance(data_set[:,1][np.where(data_set[:,0]<3.0)],9.0)
             if np.sum(abs_mag) == 0:
                 r200_mean_prelim = 0.002*vdisp_prelim + 0.40
-                self.r200 = r200_mean_prelim/1.7
+                r200 = r200_mean_prelim/1.7
             else:
-                self.r200 = self.results.Ngal_1mpc**0.51*np.exp(-1.86)
+                r200 = results.Ngal_1mpc**0.51*np.exp(-1.86)
             
             
-            if self.r200 > 3.0:
-                self.r200 = 3.0
-            #if 3.0*self.r200 < 6.0:
-            #    rlimit = 3.0*self.r200
+            if r200 > 3.0:
+                r200 = 3.0
+            #if 3.0*r200 < 6.0:
+            #    rlimit = 3.0*r200
             #else:
             #    rlimit = 5.5
 
         else:
-            self.r200 = r200
-            if self.r200 > 3.0:
-                self.r200 = 3.0
-        print('Pre_r200=',self.r200)
+            r200 = r200
+            if r200 > 3.0:
+                r200 = 3.0
+        print('Pre_r200=',r200)
 
         if self.mirror == True:
             print('Calculating Density w/Mirrored Data')
             self._gaussian_kernel(np.append(data_set[:,0],data_set[:,0]),\
-                                 np.append(data_set[:,1],-data_set[:,1]),self.r200,\
+                                 np.append(data_set[:,1],-data_set[:,1]),r200,\
                                  normalization=Hz,scale=self.kernal_stretch,\
                                  xmax=self.rgridmax,ymax=self.vgridmax)
         else:
             print('Calculating Density')
-            self._gaussian_kernel(data_set[:,0],data_set[:,1],self.r200,\
+            self._gaussian_kernel(data_set[:,0],data_set[:,1],r200,\
                                  normalization=Hz, scale=self.kernal_stretch,\
                                  xmax=self.rgridmax,ymax=self.vgridmax)
         img_tot = self.img/np.max(np.abs(self.img))
         #img_grad_tot = self.img_grad/np.max(np.abs(self.img_grad))
         #img_inf_tot = self.img_inf/np.max(np.abs(self.img_inf))
         
-        if clus_vdisp is None:
+        if cluster_data.clus_vdisp is None:
             #pre_vdisp = 9.15*Ngal_1mpc+350.32
             #print 'Pre_vdisp=',pre_vdisp
             #print 'Ngal<1Mpc=',Ngal_1mpc
-            v_cut = data_set[:,1][np.where((data_set[:,0]<self.r200) & (np.abs(data_set[:,1])<self.vlimit))]
+            v_cut = data_set[:,1][np.where((data_set[:,0]<r200) & (np.abs(data_set[:,1])<self.vlimit))]
             try:
                 pre_vdisp2 = biweight_midvariance(v_cut[np.where(np.isfinite(v_cut))],9.0)
             except:
@@ -237,91 +240,100 @@ class Caustic:
             #else:
             pre_vdisp_comb = pre_vdisp2
             
-            #if data_set[:,1][np.where(data_set[:,0]<self.r200)].size >= 10:
-            #    pre_vdisp_comb = biweight_midvariance(data_set[:,1][np.where(data_set[:,0]<self.r200)],9.0)
+            #if data_set[:,1][np.where(data_set[:,0]<r200)].size >= 10:
+            #    pre_vdisp_comb = biweight_midvariance(data_set[:,1][np.where(data_set[:,0]<r200)],9.0)
             #else:
-            #    pre_vdisp_comb = np.std(data_set[:,1][np.where(data_set[:,0]<self.r200)],ddof=1)
+            #    pre_vdisp_comb = np.std(data_set[:,1][np.where(data_set[:,0]<r200)],ddof=1)
             #    #pre_vdisp_comb = (pre_vdisp*(pre_vdisp2*v_unc)**2+\
             #                             pre_vdisp2*118.14**2)/(118.14**2+(pre_vdisp2*v_unc)**2)
             
         else:
-            pre_vdisp_comb = clus_vdisp
+            pre_vdisp_comb = cluster_data.clus_vdisp
         print('Combined Vdisp=',pre_vdisp_comb)
 
-        #beta = 0.5*self.x_range/(self.x_range + self.r200/4.0)
+        #beta = 0.5*self.x_range/(self.x_range + r200/4.0)
         #Identify initial caustic surface and members within the surface
         print('Calculating initial surface')
         if self.inflection == False:
             if gal_memberflag is None:
-                self.S.findsurface(data_set,self.x_range,self.y_range,img_tot,\
-                                   r200=self.r200,halo_vdisp=pre_vdisp_comb,beta=None,\
+                S.findsurface(data_set,self.x_range,self.y_range,img_tot,\
+                                   r200=r200,halo_vdisp=pre_vdisp_comb,beta=None,\
                                    mirror=self.mirror,edge_perc=self.edge_perc,Hz=Hz,\
                                    edge_int_remove=self.edge_int_remove,q=self.kernal_stretch,plotphase=False)
             else:
-                self.S.findsurface(data_set,self.x_range,self.y_range,img_tot,\
-                                   memberflags=data_set[:,-1],r200=self.r200,\
+                S.findsurface(data_set,self.x_range,self.y_range,img_tot,\
+                                   memberflags=data_set[:,-1],r200=r200,\
                                    mirror=self.mirror,edge_perc=self.edge_perc,Hz=Hz,q=self.kernal_stretch)
         else:
             if gal_memberflag is None:
-                self.S.findsurface_inf(data_set,self.x_range,self.y_range,img_tot,\
-                                       self.img_inf,r200=self.r200,halo_vdisp=pre_vdisp_comb,\
+                S.findsurface_inf(data_set,self.x_range,self.y_range,img_tot,\
+                                       self.img_inf,r200=r200,halo_vdisp=pre_vdisp_comb,\
                                        beta=None,Hz=Hz,q=self.kernal_stretch)
             else:
-                self.S.findsurface_inf(data_set,self.x_range,self.y_range,img_tot,\
-                                       self.img_inf,memberflags=data_set[:,-1],r200=self.r200,\
+                S.findsurface_inf(data_set,self.x_range,self.y_range,img_tot,\
+                                       self.img_inf,memberflags=data_set[:,-1],r200=r200,\
                                        Hz=Hz,q=self.kernal_stretch)
 
-        self.results.caustic_profile = self.S.Ar_finalD
-        self.results.caustic_fit = self.S.vesc_fit
-        self.results.caustic_edge = np.abs(self.S.Ar_finalE)
-        self.results.caustic_fit_edge = self.S.vesc_fit_e
-        self.results.gal_vdisp = self.S.gal_vdisp
-        self.results.memflag = self.S.memflag
+        results.clus_ra = cluster_data.clus_ra
+        results.clus_dec = cluster_data.clus_dec
+        results.clus_z = cluster_data.clus_z
+        
+        results.caustic_profile = S.Ar_finalD
+        results.caustic_fit = S.vesc_fit
+        results.caustic_edge = np.abs(S.Ar_finalE)
+        results.caustic_fit_edge = S.vesc_fit_e
+        results.gal_vdisp = S.gal_vdisp
+        results.memflag = S.memflag
 
         #Estimate the mass based off the caustic profile, beta profile (if given), and concentration (if given)
         if clus_z is not None:
             crit = self.cosmo.fidcosmo.critical_density(clus_z).to(astunits.solMass/astunits.Mpc**3)#2.7745946e11*(self.cosmo.h)**2.0*(0.25*(1+clus_z)**3.0 + 0.75)
-            Mass = self.calculate_mass(ri=self.x_range,A=self.results.caustic_profile,crit=crit,r200=r200,fbr=None)
-            Mass2 = self.calculate_mass(ri=self.x_range,A=self.results.caustic_profile,crit=crit,r200=r200,fbr=self.fbr)
-            MassE = self.calculate_mass(ri=self.x_range,A=self.results.caustic_edge,crit=crit,r200=r200,fbr=self.fbr)
-            MassF = self.calculate_mass(ri=self.x_range,A=self.results.caustic_fit,crit=crit,r200=r200,fbr=self.fbr)
-            MassFE = self.calculate_mass(ri=self.x_range,A=self.results.caustic_fit_edge,crit=crit,r200=r200,fbr=self.fbr)
+            Mass = self.calculate_mass( ri=self.x_range, A=results.caustic_profile,\
+                                       crit=crit, r200=r200, fbr=None)
+            Mass2 = self.calculate_mass( ri=self.x_range, A=results.caustic_profile,\
+                                        crit=crit, r200=r200, fbr=self.fbr)
+            MassE = self.calculate_mass( ri=self.x_range, A=results.caustic_edge,\
+                                        crit=crit, r200=r200, fbr=self.fbr)
+            MassF = self.calculate_mass( ri=self.x_range, A=results.caustic_fit,\
+                                        crit=crit, r200=r200, fbr=self.fbr)
+            MassFE = self.calculate_mass( ri=self.x_range, A=results.caustic_fit_edge,\
+                                         crit=crit, r200=r200, fbr=self.fbr)
             
-            self.results.crit = crit
-            self.results.mprof = Mass['massprofile']
-            self.results.mprof_fbeta = Mass2['massprofile']
-            self.results.mprof_edge = MassE['massprofile']
-            self.results.r200_est = Mass['r200_est']
-            self.results.r200_est_fbeta = Mass2['r200_est']
-            self.results.r200_est_edge = MassE['r200_est']
-            self.results.r500_est = Mass['r500_est']
-            self.results.r500_est_fbeta = Mass2['r500_est']
-            self.results.M200_est = Mass['M200_est']
-            self.results.M200_est_fbeta = Mass2['M200_est']
-            self.results.M200_fbeta = Mass2['M200']
-            self.results.M200_edge = MassE['M200']
-            self.results.M200_edge_est = MassE['M200_est']
-            self.results.M200_fit = MassF['M200']
-            self.results.M200_fit_est = MassF['M200_est']
-            self.results.M200_fit_edge = MassFE['M200']
-            self.results.M200_fit_edge_est = MassFE['M200_est']
-            self.results.M500_est = Mass['M500_est']
-            self.results.M500_est_fbeta = Mass2['M500_est']
+            results.crit = crit
+            results.mprof = Mass.massprofile
+            results.mprof_fbeta = Mass2.massprofile
+            results.mprof_edge = MassE.massprofile
+            results.r200_est = Mass.r200_est
+            results.r200_est_fbeta = Mass2.r200_est
+            results.r200_est_edge = MassE.r200_est
+            results.r500_est = Mass.r500_est
+            results.r500_est_fbeta = Mass2.r500_est
+            results.M200_est = Mass.M200_est
+            results.M200_est_fbeta = Mass2.M200_est
+            results.M200_fbeta = Mass2.M200
+            results.M200_edge = MassE.M200
+            results.M200_edge_est = MassE.M200_est
+            results.M200_fit = MassF.M200
+            results.M200_fit_est = MassF.M200_est
+            results.M200_fit_edge = MassFE.M200
+            results.M200_fit_edge_est = MassFE.M200_est
+            results.M500_est = Mass.M500_est
+            results.M500_est_fbeta = Mass2.M500_est
 
-            print('r200 estimate: ',Mass2['r200_est'])
-            print('M200 estimate: ',Mass2['M200_est'])
+            print('r200 estimate: ',Mass2.r200_est)
+            print('M200 estimate: ',Mass2.M200_est)
             
-            self.results.Ngal = data_set[np.where((self.results.memflag==1)&(data_set[:,0]<=self.results.r200_est_fbeta))].shape[0]
+            results.Ngal = data_set[np.where((results.memflag==1)&(data_set[:,0]<=results.r200_est_fbeta))].shape[0]
         
         #calculate velocity dispersion
         try:
-            self.results.vdisp_gal = biweight_midvariance(data_set[:,1][self.results.memflag==1],9.0)
+            results.vdisp_gal = biweight_midvariance(data_set[:,1][results.memflag==1],9.0)
         except:
             try:
-                self.results.vdisp_gal = np.std(data_set[:,1][self.results.memflag==1],ddof=1)
+                results.vdisp_gal = np.std(data_set[:,1][results.memflag==1],ddof=1)
             except:
-                self.results.vdisp_gal = 0.0
-        return 1
+                results.vdisp_gal = 0.0
+        return results
 
     def _gaussian_kernel(self,xvalues,yvalues,r200,normalization=100.0,scale=10.0,xres=200,yres=220,xmax=6.0,ymax=5000.0):
         """
@@ -412,15 +424,15 @@ class Caustic:
             fbr = None : An exact guess of Fbeta by whatever means. Usually not used.
         
         returns:
-            mass_info: dict
-                keys: g_b, conc, f_beta, massprofile, avg_density, r200_est, M200
+            mass_info: MassInfo data object
+                variables: g_b, conc, f_beta, massprofile, avg_density, r200_est, M200
 
         """
         "Calculate the mass profile"
         #vdisp = self.gal_vdisp
         G = astconsts.G.value
         solmass = astconsts.M_sun.value
-        mass_info = {}
+        mass_info = MassInfo()
         r2 = ri[ri>=0]
         A2 = A[ri>=0]
         Mpc2km = astunits.Mpc.to(astunits.km)
@@ -433,9 +445,9 @@ class Caustic:
         else:
             conc = conc1
         beta = 0.5*(ri/(ri+r200/conc))
-        mass_info['g_b'] = (3-2.0*beta)/(1-beta)
+        mass_info.g_b = (3-2.0*beta)/(1-beta)
         if fbr is None:
-            f_beta = 0.5*((r2/r200*conc)**2)/((1+((r2/r200*conc)))**2*np.log(1+((r2/r200*conc))))*mass_info['g_b']
+            f_beta = 0.5*((r2/r200*conc)**2)/((1+((r2/r200*conc)))**2*np.log(1+((r2/r200*conc))))*mass_info.g_b
             f_beta[0] = 0
             for i in range(A2.size-1):
                 i += 1    
@@ -453,25 +465,25 @@ class Caustic:
                 sumtot[i] = np.trapz(f_beta[1:i+1]*(A2[1:i+1]*1000)**2,(r2[1:i+1])*Mpc2km*1000)
                 #sum[i] = np.trapz((A2[:i+1]*1000)**2,(r2[:i+1])*Mpc2km*1000)
             #sum = integrate.cumtrapz(f_beta*(A2[:f_beta.size]*1000)**2,r2[:f_beta.size]*Mpc2km*1000,initial=0.0)
-        mass_info['massprofile'] = sumtot/(G*solmass)
+        mass_info.massprofile = sumtot/(G*solmass)
         f_beta_size = f_beta.size
         #return the caustic r200
-        mass_info['avg_density'] = mass_info['massprofile']/(4.0/3.0*np.pi*(ri[:f_beta_size])**3.0)
+        mass_info.avg_density = mass_info.massprofile/(4.0/3.0*np.pi*(ri[:f_beta_size])**3.0)
         try:
-            #mass_info['r200_est'] = (ri[:f_beta_size])[np.where(mass_info['avg_density'] >= 200*crit)[0]+1][-1]
-            finterp = interp1d(mass_info['avg_density'][::-1],ri[:f_beta_size][::-1])
-            mass_info['r200_est'] = finterp(200*crit)
-            mass_info['r500_est'] = finterp(500*crit)
+            #mass_info.r200_est = (ri[:f_beta_size])[np.where(mass_info.avg_density >= 200*crit)[0]+1][-1]
+            finterp = interp1d(mass_info.avg_density[::-1],ri[:f_beta_size][::-1])
+            mass_info.r200_est = finterp(200*crit)
+            mass_info.r500_est = finterp(500*crit)
         except IndexError:
-            mass_info['r200_est'] = 0.0
-            mass_info['r500_est'] = 0.0
-        #mass_info['M200_est'] = mass_info['massprofile'][np.where(ri[:f_beta_size] <= mass_info['r200_est'])[0][-1]]
-        finterp = interp1d(ri[:f_beta_size],mass_info['massprofile'])
-        mass_info['M200_est'] = finterp(mass_info['r200_est'])
-        mass_info['M500_est'] = finterp(mass_info['r500_est'])
-        mass_info['M200'] = mass_info['massprofile'][np.where(ri[:f_beta_size] <= r200)[0][-1]]
-        mass_info['f_beta'] = f_beta
-        mass_info['conc'] = conc
+            mass_info.r200_est = 0.0
+            mass_info.r500_est = 0.0
+        #mass_info.M200_est = mass_info.massprofile[np.where(ri[:f_beta_size] <= mass_info.r200_est)[0][-1]]
+        finterp = interp1d(ri[:f_beta_size],mass_info.massprofile)
+        mass_info.M200_est = finterp(mass_info.r200_est)
+        mass_info.M500_est = finterp(mass_info.r500_est)
+        mass_info.M200 = mass_info.massprofile[np.where(ri[:f_beta_size] <= r200)[0][-1]]
+        mass_info.f_beta = f_beta
+        mass_info.conc = conc
         return mass_info
         
     def findangle(ra,dec,clus_RA,clus_DEC):
