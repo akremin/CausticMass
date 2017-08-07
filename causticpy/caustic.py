@@ -57,7 +57,6 @@ class Caustic:
                  gapper=True,mirror=True,absflag=False,inflection=False,edge_perc=0.1,fbr=0.65):
         
         self.cosmo = cosmology.FlatLambdaCDM(H0=100.*h, Om0=Om0)
-        self.results = CausticFitResults()
         self.rlimit = rlimit
         self.vlimit = vlimit
         self.kernal_stretch = kernal_stretch
@@ -71,14 +70,34 @@ class Caustic:
         self.inflection = inflection
         self.edge_perc = edge_perc
         self.fbr= fbr
+
+    #def change_param(self,h=None,Om0=None,rlimit=None,vlimit=None,kernal_stretch=None,
+    #             rgridmax=None,vgridmax=None,cut_sample=None,edge_int_remove=None,\
+    #             gapper=None,mirror=None,absflag=None,inflection=None,edge_perc=None,fbr=None):
+    #    
+    #    self.cosmo = cosmology.FlatLambdaCDM(H0=100.*h, Om0=Om0)
+    #    self.results = CausticFitResults()
+    #    self.rlimit = rlimit
+    #    self.vlimit = vlimit
+    #    self.kernal_stretch = kernal_stretch
+    #    self.rgridmax = rgridmax
+    #    self.vgridmax = vgridmax
+    #    self.cut_sample = cut_sample
+    #    self.edge_int_remove = edge_int_remove
+    #    self.gapper = gapper
+    #    self.mirror = mirror
+    #    self.absflag = absflag
+    #    self.inflection = inflection
+    #    self.edge_perc = edge_perc
+    #    self.fbr= fbr
     
     def run_caustic(self,data,gal_mags=None,gal_memberflag=None,clus_ra=None,clus_dec=None,clus_z=None,\
                     gal_r=None,gal_v=None,r200=None,clus_vdisp=None):
+        self.results = CausticFitResults()
         self.S = CausticSurface(self.cosmo)
         self.results.clus_ra = clus_ra
         self.results.clus_dec = clus_dec
         self.results.clus_z = clus_z
-
 
         if gal_r == None:
             #Reduce data set to only valid redshifts
@@ -86,7 +105,6 @@ class Caustic:
         else:
             data_spec = data[np.where(np.isfinite(gal_v))]
 
-        
         if gal_r == None:
             #calculate angular diameter distance. 
             #Variable self.ang_d
@@ -181,8 +199,8 @@ class Caustic:
                                  normalization=Hz, scale=self.kernal_stretch,\
                                  xmax=self.rgridmax,ymax=self.vgridmax)
         img_tot = self.img/np.max(np.abs(self.img))
-        img_grad_tot = self.img_grad/np.max(np.abs(self.img_grad))
-        img_inf_tot = self.img_inf/np.max(np.abs(self.img_inf))
+        #img_grad_tot = self.img_grad/np.max(np.abs(self.img_grad))
+        #img_inf_tot = self.img_inf/np.max(np.abs(self.img_inf))
         
         if clus_vdisp is None:
             #pre_vdisp = 9.15*Ngal_1mpc+350.32
