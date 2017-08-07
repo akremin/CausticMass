@@ -19,11 +19,15 @@ from scipy.optimize import curve_fit
 from scipy.interpolate import interp1d
 from skimage import measure
 import pdb
+import pandas as pd
+
+
 import warnings
+
 #import astropy.constants as astconsts
 import astropy.units as astunits
 import astropy.cosmology as cosmology
-
+from astropy.table import Table
 
 warnings.filterwarnings('ignore')
 
@@ -62,6 +66,8 @@ class CausticSurface:
     def findsurface(self,data,ri,vi,Zi,memberflags=None,r200=2.0,maxv=5000.0,halo_scale_radius=None,\
                     halo_scale_radius_e=0.01,halo_vdisp=None,bin=None,plotphase=False,beta=None,\
                     mirror=True,q=10.0,Hz = 100.0,edge_perc=0.1,edge_int_remove=False):
+        
+        data = data.to_pandas()
         kappaguess = np.max(Zi) #first guess at the level
         #self.levels = np.linspace(0.00001,kappaguess,100)[::-1] #create levels (kappas) to try out
         self.levels = np.logspace(np.log10(np.min(Zi[Zi>0]/5.0)),np.log10(kappaguess),200)[::-1] 
@@ -82,7 +88,7 @@ class CausticSurface:
         
         #Calculate velocity dispersion with either members, fed value, or estimate using 3.5sigma clipping
         if memberflags is not None:
-            vvarcal = data[:,1][np.where(memberflags==1)]
+            vvarcal = data['vel'][np.where(memberflags==1)]
             try:
                 self.gal_vdisp = biweight_midvariance(vvarcal[np.where(np.isfinite(vvarcal))],9.0)
                 print('O ya! membership calculation!')
@@ -95,9 +101,9 @@ class CausticSurface:
         else:
             #Variable self.gal_vdisp
             try:
-                self.findvdisp(data[:,0],data[:,1],r200,maxv)
+                self.findvdisp(data['rad'],data['vel'],r200,maxv)
             except:
-                self.gal_vdisp = np.std(data[:,1][np.where((data[:,0]<r200) & (np.abs(data[:,1])<maxv))],ddof=1)
+                self.gal_vdisp = np.std(data['vel'][np.where((data['rad']<r200) & (np.abs(data['vel'])<maxv))],ddof=1)
             self.vvar = self.gal_vdisp*self.gal_vdisp
         
         ##initilize arrays
@@ -140,13 +146,13 @@ class CausticSurface:
         #Identify sharp phase-space edge
         numbins = 6
         perc_top = edge_perc #what percent of top velocity galaxies per/bin used to identify surface
-        numrval = (data_e[:,0][data_e[:,0]< r200]).size #number of galaxies less than r200
+        numrval = (data_e['rad'][data_e['rad']< r200]).size #number of galaxies less than r200
         size_bin = int(np.ceil(numrval*1.0/numbins)) #how many galaxies are in each bin
-        rsort = data_e[:,0][np.argsort(data_e[:,0])] #sort r positions
+        rsort = data_e['rad'][np.argsort(data_e['rad'])] #sort r positions
         if mirror == True:
-            vsort = np.abs(data_e[:,1][np.argsort(data_e[:,0])]) #sort absolute value of velocities by r position
+            vsort = np.abs(data_e['vel'][np.argsort(data_e['rad'])]) #sort absolute value of velocities by r position
         else:
-            vsort = data_e[:,1][np.argsort(data_e[:,0])] #same as above but not abs
+            vsort = data_e['vel'][np.argsort(data_e['rad'])] #same as above but not abs
         self.data_e = data_e
         mid_rbin = np.array([])
         avgmax = np.array([])
@@ -193,7 +199,7 @@ class CausticSurface:
         if plotphase == True:
             s,ax = plt.subplots(1,figsize=(10,7))
             #ax.pcolormesh(ri,vi,Zi.T)
-            ax.plot(data[:,0],data[:,1],'k.',markersize=0.5,alpha=0.8)
+            ax.plot(data['rad'],data['vel'],'k.',markersize=0.5,alpha=0.8)
             for t,con in enumerate(self.contours):
                 ax.plot(ri,con,c='0.4',alpha=0.5)
                 ax.plot(ri,-con,c='0.4',alpha=0.5)
@@ -222,15 +228,15 @@ class CausticSurface:
         #print ri.size, self.vesc_fit.size
         fcomp = interp1d(ri,self.vesc_fit)
         for k in range(self.memflag.size):
-            vcompare = fcomp(data[k,0])
-            if np.abs(vcompare) >= np.abs(data[k,1]):
+            vcompare = fcomp(data['rad'][k])
+            if np.abs(vcompare) >= np.abs(data_e['vel'][k]):
                 self.memflag[k] = 1
 
     def edge_outlier_clip(self,data_e,ri,vi,Zi):
             r_inside = []
             v_inside = []
             i = 0
-            while ri[i] <= np.max(data_e[:,0]):
+            while ri[i] <= np.max(data_e['rad']):
                 inner_el = i
                 outer_el = i + 5
                 inner_r = ri[inner_el]
@@ -238,17 +244,17 @@ class CausticSurface:
                 '''
                 dens = np.average(Zi[inner_el:outer_el],axis=0)
                 roots = np.sort(np.abs(vi[dens>0.05]))
-                databinned = data_e[np.where((data_e[:,0]>=inner_r)&(data_e[:,0]<outer_r))]
+                databinned = data_e[np.where((data_e['rad']>=inner_r)&(data_e['rad']<outer_r))]
                 if len(roots) == 0:
-                    root = 2 * biweight_midvariance(databinned[:,1].copy(),9.0)
+                    root = 2 * biweight_midvariance(databinned['vel'].copy(),9.0)
                 elif np.abs(roots[-1]) < 500.0:
-                    root = 2 * biweight_midvariance(databinned[:,1].copy(),9.0)
+                    root = 2 * biweight_midvariance(databinned['vel'].copy(),9.0)
                 elif np.abs(roots[-1]) > 3500.0:
                     root = 3500.0
                 else:
                     root = np.abs(roots[-1])
-                r_inside.extend(databinned[:,0][np.where(np.abs(databinned[:,1])<root)])
-                v_inside.extend(databinned[:,1][np.where(np.abs(databinned[:,1])<root)])
+                r_inside.extend(databinned['rad'][np.where(np.abs(databinned['vel'])<root)])
+                v_inside.extend(databinned['vel'][np.where(np.abs(databinned['vel'])<root)])
                 i += 5
             data_e = np.vstack((np.array(r_inside),np.array(v_inside))).T
             return data_e
@@ -259,19 +265,19 @@ class CausticSurface:
                     np.average(Zi[inner_el:outer_el],axis=0)[:-1])/(vi[1:]- \
                     vi[:-1]))[1:]*((np.average(Zi[inner_el:outer_el],axis=0)[1:]- \
                     np.average(Zi[inner_el:outer_el],axis=0)[:-1])/(vi[1:]-vi[:-1]))[:-1] < 0]))
-                databinned = data_e[np.where((data_e[:,0]>=inner_r)&(data_e[:,0]<outer_r))]
+                databinned = data_e[np.where((data_e['rad']>=inner_r)&(data_e['rad']<outer_r))]
                 if len(roots) > 1:
                     if roots[1] < 1000.0:
                         if len(roots) > 2:
                             if roots[2] < 1000.0:
-                                root = 3 * biweight_midvariance(databinned[:,1].copy(),9.0)
+                                root = 3 * biweight_midvariance(databinned['vel'].copy(),9.0)
                             else:
                                 root = roots[2]
-                        else: root = 3 * biweight_midvariance(databinned[:,1].copy(),9.0)
+                        else: root = 3 * biweight_midvariance(databinned['vel'].copy(),9.0)
                     else: root = roots[1]
                 else: root = 3500.0
-                r_inside.extend(databinned[:,0][np.where(np.abs(databinned[:,1])<root)])
-                v_inside.extend(databinned[:,1][np.where(np.abs(databinned[:,1])<root)])
+                r_inside.extend(databinned['rad'][np.where(np.abs(databinned['vel'])<root)])
+                v_inside.extend(databinned['vel'][np.where(np.abs(databinned['vel'])<root)])
                 i += 5
             data_e = np.vstack((np.array(r_inside),np.array(v_inside))).T
             return data_e
@@ -339,7 +345,7 @@ class CausticSurface:
         
         #Calculate velocity dispersion with either members, fed value, or estimate using 3.5sigma clipping
         if memberflags is not None:
-            vvarcal = data[:,1][np.where(memberflags==1)]
+            vvarcal = data['vel'][np.where(memberflags==1)]
             try:
                 self.gal_vdisp = biweight_midvariance(vvarcal[np.where(np.isfinite(vvarcal))],9.0)
                 print('O ya! membership calculation!')
@@ -352,9 +358,9 @@ class CausticSurface:
         else:
             #Variable self.gal_vdisp
             try:
-                self.findvdisp(data[:,0],data[:,1],r200,maxv)
+                self.findvdisp(data['rad'],data['vel'],r200,maxv)
             except:
-                self.gal_vdisp = np.std(data[:,1][np.where((data[:,0]<r200) & (np.abs(data[:,1])<maxv))],ddof=1)
+                self.gal_vdisp = np.std(data['vel'][np.where((data['rad']<r200) & (np.abs(data['vel'])<maxv))],ddof=1)
             self.vvar = self.gal_vdisp**2
         
         self.Ar_final_opt = np.zeros((self.levels.size,ri[np.where((ri<r200) & (ri>=0))].size)) #2D array: density levels x velocity profile
@@ -377,7 +383,7 @@ class CausticSurface:
         #self.level_elem = (self.levels[Ar_avg>np.sqrt(vvar)])[np.where(self.inf_avg[Ar_avg>np.sqrt(vvar)] == np.max(self.inf_avg[Ar_avg>np.sqrt(vvar)]))]
         self.level_elem = self.levels[np.where(self.inf_avg == np.max(self.inf_avg))][0]
         #low_zone = np.where((np.average(np.abs(self.Ar_final_opt),axis=1)>np.max(v)/2.0) & (np.average(np.abs(self.Ar_final_opt),axis=1)<np.max(v)))
-        #high_zone = np.where((np.average(np.abs(self.Ar_final_opt),axis=1)>np.max(data[:,1])/2.0))
+        #high_zone = np.where((np.average(np.abs(self.Ar_final_opt),axis=1)>np.max(data['vel'])/2.0))
         #level_elem_low = self.levels[low_zone][np.where(self.inf_avg[low_zone] == np.min(self.inf_avg[low_zone]))][-1]
         #level_elem_high = self.levels[high_zone][np.where(self.inf_avg[high_zone] == np.max(self.inf_avg[high_zone]))][-1]
         try:
@@ -412,8 +418,8 @@ class CausticSurface:
         #print ri.size, self.vesc_fit.size
         fcomp = interp1d(ri,self.vesc_fit)
         for k in range(self.memflag.size):
-            vcompare = fcomp(data[k,0])
-            if np.abs(vcompare) >= np.abs(data[k,1]):
+            vcompare = fcomp(data['rad'][k])
+            if np.abs(vcompare) >= np.abs(data_e['vel'][k]):
                 self.memflag[k] = 1
         
         #ax.plot(ri,np.abs(self.Ar_final),c='red',lw=2)
@@ -427,15 +433,15 @@ class CausticSurface:
     def causticmembership(self,data,ri,caustics):
         self.memflag = np.zeros(data.shape[0])
         for k in range(self.memflag.size):
-            #diff = data[k,0]-ri
-            xrange_up = ri[np.where(ri > data[k,0])][0]
-            xrange_down = ri[np.where(ri <= data[k,0])][-1]
-            c_up = np.abs(caustics[np.where(ri > data[k,0])])[0]
-            c_down = np.abs(caustics[np.where(ri<= data[k,0])])[-1]
+            #diff = data['rad'][k]-ri
+            xrange_up = ri[np.where(ri > data['rad'][k])][0]
+            xrange_down = ri[np.where(ri <= data['rad'][k])][-1]
+            c_up = np.abs(caustics[np.where(ri > data['rad'][k])])[0]
+            c_down = np.abs(caustics[np.where(ri<= data['rad'][k])])[-1]
             slope = (c_up-c_down)/(xrange_up-xrange_down)
             intercept = c_up - slope*xrange_up
-            vcompare = slope*data[k,0]+intercept
-            if vcompare >= np.abs(data[k,1]):
+            vcompare = slope*data['rad'][k]+intercept
+            if vcompare >= np.abs(data_e['vel'][k]):
                 self.memflag[k] = 1
    
     def findvdisp(self,r,v,r200,maxv):
