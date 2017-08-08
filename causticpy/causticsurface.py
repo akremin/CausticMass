@@ -67,7 +67,6 @@ class CausticSurface:
                     halo_scale_radius_e=0.01,halo_vdisp=None,bin=None,plotphase=False,beta=None,\
                     mirror=True,q=10.0,Hz = 100.0,edge_perc=0.1,edge_int_remove=False):
         
-        data = data.to_pandas()
         kappaguess = np.max(Zi) #first guess at the level
         #self.levels = np.linspace(0.00001,kappaguess,100)[::-1] #create levels (kappas) to try out
         self.levels = np.logspace(np.log10(np.min(Zi[Zi>0]/5.0)),np.log10(kappaguess),200)[::-1] 

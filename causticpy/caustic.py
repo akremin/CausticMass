@@ -22,9 +22,10 @@ import astropy.constants as astconsts
 import astropy.units as astunits
 import astropy.cosmology as cosmology
 from astropy.table import Table
+import pandas as pd
 
-from causticsurface import CausticSurface
-from datastructs import MassInfo, CausticFitResults, ClusterData
+from .causticsurface import CausticSurface
+from .datastructs import MassInfo, CausticFitResults, ClusterData
 
 warnings.filterwarnings('ignore')
 
@@ -87,25 +88,25 @@ class Caustic:
         results = CausticFitResults()
         results.cosmo = self.cosmo
         
-        clus_z, r200 = cluster_data.clus_z, cluster_data.gal_r
+        clus_z, r200 = cluster_data.clus_z, cluster_data.r200
                                             
-        v, gal_memberflag = cluster_data.gal_v, cluster_data.gal_memberflag
+        v, gal_memberflag, gal_mags = cluster_data.v, cluster_data.gal_memberflag, cluster_data.gal_mags
         data_table = cluster_data.data_spec
         
-        if cluster_data.gal_r == None:
+        if cluster_data.r == None:
             #calculate angular diameter distance. 
             #Variable self.ang_d
-            ang_d = self.cosmo.fidcosmo.angular_diameter_distance(clus_z)
+            ang_d = self.cosmo.angular_diameter_distance(clus_z)
             #calculate the spherical angles of galaxies from cluster center.
             #Variable self.angle
             angle = self.findangle(data_table['RA'],data_table['DEC'],\
                                    cluster_data.clus_ra,cluster_data.clus_dec)
             r = angle*ang_d
         else:
-            r = cluster_data.gal_r
+            r = cluster_data.r
 
         #calculate H(z)
-        Hz = self.cosmo.fidcosmo.H(clus_z).value  #self.cosmo.h*100*np.sqrt(0.25*(1+self.clus_z)**3 + 0.75)
+        Hz = self.cosmo.H(clus_z).value  #self.cosmo.h*100*np.sqrt(0.25*(1+self.clus_z)**3 + 0.75)
         #hz = self.Hz/100   #self.Hz / 100.0  #little h(z)
 
         #package galaxy data, USE ASTROPY TABLE HERE!!!!!
@@ -116,19 +117,23 @@ class Caustic:
         if gal_memberflag is not None:
             memflagcol = Table.Column(data=gal_memberflag,name='MEMFLAG')
             data_table.add_column(memflagcol)
-        
+        if gal_mags is not None:
+            galmagcol = Table.Column(data=gal_mags,name='MAG')
+            data_table.add_column(galmagcol)        
+    
         #reduce sample within limits
         if self.cut_sample == True:
-            data_set = self.set_sample(data_table,rlimit=self.rlimit,vlimit=self.vlimit)
+            data_set = self.set_sample(data=data_table,rlimit=self.rlimit,vlimit=self.vlimit)
         else:
             data_set = data_table
-       
-        
+            
+        data_set = data_set.to_pandas()
+
         #further select sample via shifting gapper
         if self.gapper == True:
             data_set = self.shiftgapper(data_set)
         print('DATA SET SIZE',len(data_set))
-        data_set = data_set.to_pandas()
+
         ##tries to identify double groups that slip through the gapper process
         #upper_max = np.max(data_set[:,1][np.where((data_set[:,1]>0.0)&(data_set[:,0]<1.0))])
         #lower_max = np.min(data_set[:,1][np.where((data_set[:,1]<0.0)&(data_set[:,0]<1.0))])
@@ -142,14 +147,14 @@ class Caustic:
             if cluster_data.abs_flag:
                 abs_mag = data_table['MAG']
             else:
-                abs_mag = data_table['MAG'] - self.cosmo.fidcosmo.distmod(clus_z)
+                abs_mag = data_table['MAG'] - self.cosmo.distmod(clus_z).value
             results.Ngal_1mpc = np.sum((abs_mag < -19.55) & (r < 0.5) & (np.abs(v) < 3500))
-        except IndexError:
-            abs_mag = np.zeros(len(data_table))
+        except KeyError:
+            abs_mag = np.zeros(len(data_set))
             results.Ngal_1mpc = None
         
         if r200 == None:
-            vdisp_prelim = biweight_midvariance(data_set['vel'][np.where(data_set['rad']<3.0)],9.0)
+            vdisp_prelim = biweight_midvariance(data_set['vel'][(data_set['rad']<3.0)],9.0)
             if np.sum(abs_mag) == 0:
                 r200_mean_prelim = 0.002*vdisp_prelim + 0.40
                 r200 = r200_mean_prelim/1.7
@@ -190,7 +195,7 @@ class Caustic:
             #pre_vdisp = 9.15*Ngal_1mpc+350.32
             #print 'Pre_vdisp=',pre_vdisp
             #print 'Ngal<1Mpc=',Ngal_1mpc
-            v_cut = data_set['vel'][np.where((data_set['rad']<r200) & (np.abs(data_set['vel'])<self.vlimit))]
+            v_cut = data_set['vel'][((data_set['rad']<r200) & (np.abs(data_set['vel'])<self.vlimit))]
             try:
                 pre_vdisp2 = biweight_midvariance(v_cut[np.where(np.isfinite(v_cut))],9.0)
             except:
@@ -231,7 +236,6 @@ class Caustic:
         else:
             pre_vdisp_comb = cluster_data.clus_vdisp
         print('Combined Vdisp=',pre_vdisp_comb)
-
         #beta = 0.5*self.x_range/(self.x_range + r200/4.0)
         #Identify initial caustic surface and members within the surface
         print('Calculating initial surface')
@@ -268,7 +272,7 @@ class Caustic:
 
         #Estimate the mass based off the caustic profile, beta profile (if given), and concentration (if given)
         if clus_z is not None:
-            crit = self.cosmo.fidcosmo.critical_density(clus_z).to(astunits.solMass/astunits.Mpc**3)#2.7745946e11*(self.cosmo.h)**2.0*(0.25*(1+clus_z)**3.0 + 0.75)
+            crit = self.cosmo.critical_density(clus_z).to(astunits.solMass/astunits.Mpc**3)#2.7745946e11*(self.cosmo.h)**2.0*(0.25*(1+clus_z)**3.0 + 0.75)
             Mass = self.calculate_mass( ri=self.x_range, A=results.caustic_profile,\
                                        crit=crit, r200=r200, fbr=None)
             Mass2 = self.calculate_mass( ri=self.x_range, A=results.caustic_profile,\
@@ -301,17 +305,17 @@ class Caustic:
             results.M500_est = Mass.M500_est
             results.M500_est_fbeta = Mass2.M500_est
 
-            print('r200 estimate: ',Mass2.r200_est)
-            print('M200 estimate: ',Mass2.M200_est)
+            print('r200 estimate: {:.6f}'.format(float(Mass2.r200_est)))
+            print('M200 estimate: {:.6E}'.format(float(Mass2.M200_est)))
             
-            results.Ngal = data_set[np.where((results.memflag==1)&(data_set[:,0]<=results.r200_est_fbeta))].shape[0]
+            results.Ngal = np.sum((results.memflag==1)&(data_set['rad']<=results.r200_est_fbeta))
         
         #calculate velocity dispersion
         try:
-            results.vdisp_gal = biweight_midvariance(data_set[:,1][results.memflag==1],9.0)
+            results.vdisp_gal = biweight_midvariance(data_set['vel'][results.memflag==1],9.0)
         except:
             try:
-                results.vdisp_gal = np.std(data_set[:,1][results.memflag==1],ddof=1)
+                results.vdisp_gal = np.std(data_set['vel'][results.memflag==1],ddof=1)
             except:
                 results.vdisp_gal = 0.0
         return results
@@ -385,7 +389,7 @@ class Caustic:
         self.img_grad = ndi.gaussian_gradient_magnitude(imgr, (ksize_x,ksize_y))
         self.img_inf = ndi.gaussian_gradient_magnitude(ndi.gaussian_gradient_magnitude(imgr, (ksize_x,ksize_y)), (ksize_x,ksize_y))
 
-    def calculate_mass(A,ri=np.arange(0,6.,0.05),beta=0.25,r200=2.0,crit=2.2e11,conc1=None,fbr=None):
+    def calculate_mass(self,A,ri=np.arange(0,6.,0.05),beta=0.25,r200=2.0,crit=2.2e11,conc1=None,fbr=None):
         """
         calculate_mass(A,ri,r200,conc1=None,crit,beta=None,fbr=None)
 
@@ -469,7 +473,7 @@ class Caustic:
         mass_info.conc = conc
         return mass_info
         
-    def findangle(ra,dec,clus_RA,clus_DEC):
+    def findangle(self,ra,dec,clus_RA,clus_DEC):
         """
         Calculates the angles between the galaxies and the estimated cluster center.
         The value is returned in radians.
@@ -479,7 +483,7 @@ class Caustic:
         angle = np.arccos(zsep+xysep)
         return angle
 
-    def set_sample(data,rlimit=4.0,vlimit=3500):
+    def set_sample(self,data,rlimit=4.0,vlimit=3500):
         """
         Reduces the sample by selecting only galaxies inside r and v limits.
         The default is to use a vlimit = 3500km/s and rlimit = 4.0Mpc.
@@ -488,26 +492,26 @@ class Caustic:
         data_set = data[np.where((data['rad'] < rlimit) & (np.abs(data['vel']) < vlimit))]
         return data_set
 
-    def shiftgapper(data):
+    def shiftgapper(self,data):
         npbin = 25
         #gap_prev = 2000.0 #initialize gap size for initial comparison (must be larger to start).
-        nbins = np.int(np.ceil(len(data[0])/(npbin*1.0)))
+        nbins = np.int(np.ceil(len(data)/(npbin*1.0)))
         #origsize = data[:,0].shape[0]
-        data = data[np.argsort(data['rad'])] #sort by r to ready for binning
+        data = data.sort_values('rad') #sort by r to ready for binning
         #print 'NBINS FOR GAPPER = ', nbins
+        datafinal = pd.DataFrame(data=None,columns=data.columns.tolist())
         for i in range(nbins):
             #print 'BEGINNING BIN:',str(i)
-            databin = data[npbin*i:npbin*(i+1)]
-            datanew = Table(data=None,names=data.colnames)
-            nsize = len(databin[0])
+            databin = data[npbin*i:npbin*(i+1)].copy()
+            datanew = pd.DataFrame(data=None,columns=data.columns.tolist())
+            nsize = databin.shape[0]
             datasize = nsize-1
-            datafinal = Table(data=None,names=data.colnames)
             if nsize > 5:
                 while nsize - datasize > 0 and datasize >= 5:
                     #print '    ITERATING'
-                    nsize = len(databin[0])
-                    databinsort = databin[np.argsort(databin['vel'])] #sort by v
-                    f = (databinsort['vel'])[len(databinsort['vel'])-np.int(np.ceil(len(databinsort['vel'])/4.0))]-(databinsort['vel'])[np.int(np.ceil(len(databinsort['vel'])/4.0))]
+                    nsize = databin.shape[0]
+                    databinsort = databin.sort_values('vel') #sort by v
+                    f = databinsort['vel'].iloc[nsize-np.int(np.ceil(nsize/4.0))]-databinsort['vel'].iloc[np.int(np.ceil(nsize/4.0))]
                     gap = f/(1.349)
                     #print i,'    GAP SIZE', str(gap)
                     if gap < 500.0: break
@@ -516,15 +520,15 @@ class Caustic:
                     #    gap = gap_prev
                     #    #print '   Altered gap = %.3f'%(gap)
                     databelow = databinsort[databinsort['vel']<=0]
-                    gapbelow =databelow['vel'][1:]-databelow['vel'][:-1]
+                    gapbelow = databelow['vel'].diff()[1:]  #databelow['vel'][1:]-databelow['vel'][:-1]
                     dataabove = databinsort[databinsort['vel']>0]
-                    gapabove = dataabove['vel'][1:]-dataabove['vel'][:-1]
+                    gapabove = dataabove['vel'].diff()[1:]#dataabove['vel'][1:]-dataabove['vel'][:-1]
                     try:
                         if np.max(gapbelow) >= gap: vgapbelow = np.where(gapbelow >= gap)[0][-1]
                         else: vgapbelow = -1
                         #print 'MAX BELOW GAP',np.max(gapbelow)
                         try: 
-                            datanew.add_rows(databelow[vgapbelow+1:])
+                            datanew.append(databelow[vgapbelow+1:])
                         except:
                             datanew = databelow[vgapbelow+1:]
                     except ValueError:
@@ -534,14 +538,14 @@ class Caustic:
                         else: vgapabove = 99999999
                         #print 'MAX ABOVE GAP',np.max(gapabove)
                         try: 
-                            datanew.add_rows(dataabove[:vgapabove+1])
+                            datanew.append(dataabove[:vgapabove+1])
                         except:
                             datanew = dataabove[:vgapabove+1]
                     except ValueError:
                         pass
-                    databin = datanew
+                    databin = datanew.copy()
                     datasize = len(datanew)
-                    datanew = Table(data=None,names=data.colnames)
+                    datanew = pd.DataFrame(data=None,columns=data.columns.tolist())
                 #print 'DATA SIZE OUT', databin[:,0].size
                 #if gap >=500.0:
                 #    gap_prev = gap
@@ -549,7 +553,7 @@ class Caustic:
                 #    gap_prev = 500.0
                 
             try:
-                datafinal.add_rows(databin)
+                datafinal.append(databin)
             except:
                 datafinal = databin
         #print 'GALAXIES CUT =',str(origsize-datafinal[:,0].size)

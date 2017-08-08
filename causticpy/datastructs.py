@@ -10,10 +10,10 @@ import astropy.constants as astconsts
 from astropy.table import Table
 
 class ClusterData:
-    def __init__(self,rawdata=None,ras=None,decs=None,specs=None,gal_mags=None,gal_memberflag=None,clus_ra=None,clus_dec=None,clus_z=None,\
+    def __init__(self,rawdata=None,ras=None,decs=None,specs=None,gal_mags=None,gal_memberflags=None,clus_ra=None,clus_dec=None,clus_z=None,\
                     gal_r=None,gal_v=None,r200=None,clus_vdisp=None,clus_name=None,abs_flag=None):
 
-        if rawdata is None and ( ras is None | decs is None | specs is None ):
+        if (rawdata is None) and ( (ras is None) | (decs is None) | (specs is None) ):
             raise(IOError,"Bad table. RA, DEC, and z are required.")
 
         if rawdata is not None:
@@ -22,32 +22,33 @@ class ClusterData:
                 rawdata = rawdata.T
             colnames = ['RA','DEC','z']
             data = Table(data=rawdata[:,:3],names=colnames)
+            if ( (gal_memberflags is None) and (rawdata.shape[1] > 4) ):
+                self.gal_memberflag = rawdata[:,4]
+            else:
+                self.gal_memberflag = gal_memberflags
+            if ( (gal_mags is None) and (rawdata.shape[1] > 3) ):
+                self.gal_mags = rawdata[:,3]
+            else:
+                self.gal_mags = gal_mags
         else:
             racol = Table.Column(data=ras,name='RA')
             deccol = Table.Column(data=decs,name='DEC')
             speccol = Table.Column(data=specs,name='Z')
             data = Table([racol,deccol,speccol])
-            
-        if gal_mags is not None:
             self.gal_mags = gal_mags
-        elif rawdata.shape[1] > 3:
-            self.gal_mags = rawdata[:,3]
-        else:
-            self.gal_mags = None
-            
-        if gal_memberflag is not None:
-            self.gal_memberflag = gal_memberflag
-        elif rawdata.shape[1] > 4:
-            self.gal_memberflag = rawdata[:,4]
-        else:
-            self.gal_memberflag = None          
+            self.gal_memberflag = gal_memberflags
+
                 
         if clus_ra is None:
             #calculate average ra from galaxies
             self.clus_ra = np.median(data['RA'][:])
+        else:
+            self.clus_ra = clus_ra
         if clus_dec is None:
             #calculate average dec from galaxies
-            self.clus_dec = np.median(data['DEC'][:])       
+            self.clus_dec = np.median(data['DEC'][:])
+        else:
+            self.clus_dec = clus_dec
         if gal_r is None:
             #Reduce data set to only valid redshifts
             self.data_spec = data[np.where((np.isfinite(data['z'][:])) & (data['z'][:] > 0.0) & (data['z'][:] < 5.0))]
@@ -56,6 +57,8 @@ class ClusterData:
         if clus_z is None:
             #calculate average z from galaxies
             self.clus_z = np.median(self.data_spec['z'][:])
+        else:
+            self.clus_z = clus_z
         if gal_v is None:
             self.v = (astconsts.c.value/1000.)*(self.data_spec['z'][:] - self.clus_z)/(1+self.clus_z)
         else:

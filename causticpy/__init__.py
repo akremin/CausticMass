@@ -18,6 +18,13 @@ from __future__ import division
 
 from . import caustic
 from . import causticsurface
+from . import datastructs
+
+Caustic = caustic.Caustic
+CausticSurface = causticsurface.CausticSurface
+MassInfo = datastructs.MassInfo
+CausticFitResults = datastructs.CausticFitResults
+ClusterData = datastructs.ClusterData
 
 
 
