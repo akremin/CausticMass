@@ -10,24 +10,24 @@ import astropy.constants as astconsts
 
 
 class ClusterData:
-    def __init__(self,data,gal_mags=None,gal_memberflag=None,clus_ra=None,clus_dec=None,clus_z=None,\
-                    gal_r=None,gal_v=None,r200=None,clus_vdisp=None):
-        if clus_ra == None:
-            #calculate average ra from galaxies
-            self.clus_ra = np.median(data[:,0])
-        if clus_dec == None:
-            #calculate average dec from galaxies
-            self.clus_dec = np.median(data[:,1])       
-        if gal_r == None:
-            #Reduce data set to only valid redshifts
-            self.data_spec = data[np.where((np.isfinite(data[:,2])) & (data[:,2] > 0.0) & (data[:,2] < 5.0))]
+    def __init__(self, data, gal_mags=None, gal_memberflag=None, clus_ra=None, clus_dec=None, clus_z=None,
+                 gal_r=None, gal_v=None, r200=None, clus_vdisp=None):
+        if clus_ra is None:
+            # calculate average ra from galaxies
+            self.clus_ra = np.median(data[:, 0])
+        if clus_dec is None:
+            # calculate average dec from galaxies
+            self.clus_dec = np.median(data[:, 1])
+        if gal_r is None:
+            # Reduce data set to only valid redshifts
+            self.data_spec = data[np.where((np.isfinite(data[:, 2])) & (data[:, 2] > 0.0) & (data[:, 2] < 5.0))]
         else:
             self.data_spec = data[np.where(np.isfinite(gal_v))]
-        if clus_z == None:
-            #calculate average z from galaxies
-            self.clus_z = np.median(self.data_spec[:,2])
-        if gal_v == None:
-            self.v = (astconsts.c.value/1000.)*(self.data_spec[:,2] - self.clus_z)/(1+self.clus_z)
+        if clus_z is None:
+            # calculate average z from galaxies
+            self.clus_z = np.median(self.data_spec[:, 2])
+        if gal_v is None:
+            self.v = (astconsts.c.value / 1000.) * (self.data_spec[:, 2] - self.clus_z) / (1 + self.clus_z)
         else:
             self.v = gal_v
         # Now define the rest where we can't estimate defaults
@@ -36,8 +36,8 @@ class ClusterData:
         self.gal_memberflag = gal_memberflag
         self.r200 = r200
         self.clus_vdisp = clus_vdisp
-        
-        
+
+
 class CausticFitResults:
     '''
     Initialized as a trivial class, but meant to be used to store all of the 
@@ -51,7 +51,8 @@ class MassInfo:
     A simple data object that holds information related to the caustic estimated
     mass values
     '''
-    def __init__(self, g_b=None, conc=None, f_beta=None, massprofile=None, \
+
+    def __init__(self, g_b=None, conc=None, f_beta=None, massprofile=None,
                  avg_density=None, r200_est=None, M200=None):
         self.g_b = g_b
         self.conc = conc

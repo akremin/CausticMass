@@ -18,7 +18,7 @@ from __future__ import division
 
 from . import caustic
 from . import causticsurface
-from . import datastructs
+from . import datastructs #data_structures_depr as datastructs
 
 Caustic = caustic.Caustic
 CausticSurface = causticsurface.CausticSurface
